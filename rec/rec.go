@@ -47,7 +47,7 @@ func New(options ...func(*Options)) (rec *Rec) {
 	return
 }
 
-func (rec *Rec) Image(filename string) (rp string) {
+func (rec *Rec) Image(filename string) (rp Res) {
 	if rec.Error != nil {
 		return
 	}
@@ -65,7 +65,24 @@ func (rec *Rec) Image(filename string) (rp string) {
 	return
 }
 
-func (rec *Rec) http(b64 string) (rp string) {
+func (rec *Rec) ImageBs(bs []byte) (rp Res) {
+	if rec.Error != nil {
+		return
+	}
+	b64 := base64.StdEncoding.EncodeToString(bs)
+	if len(b64) == 0 {
+		rec.AddError(fmt.Errorf("invalid file"))
+		return
+	}
+	if rec.ops.grpc != "" {
+		rp = rec.grpc(b64)
+	} else {
+		rp = rec.http(b64)
+	}
+	return
+}
+
+func (rec *Rec) http(b64 string) (rp Res) {
 	body := map[string][]string{
 		"key":   {"image"},
 		"value": {b64},
@@ -96,12 +113,21 @@ func (rec *Rec) http(b64 string) (rp string) {
 		rec.AddError(errors.Errorf("rec failed"))
 		return
 	}
-	log.WithContext(rec.ops.ctx).Info("rec success, latency: %dms", end-start)
-	rp = v.Value[0]
+	log.
+		WithContext(rec.ops.ctx).
+		WithFields(map[string]interface{}{
+			"Latency": fmt.Sprintf("%dms", end-start),
+		}).
+		Info("rec success")
+	var arr []Res
+	utils.Json2Struct(v.Value[0], &arr)
+	if len(arr) == 1 {
+		rp = arr[0]
+	}
 	return
 }
 
-func (rec *Rec) grpc(b64 string) (rp string) {
+func (rec *Rec) grpc(b64 string) (rp Res) {
 	client := pp.NewPipelineServiceClient(rec.client.Conn)
 	start := carbon.Now().TimestampMilli()
 	v, err := client.Inference(rec.ops.ctx, &pp.Request{
@@ -125,8 +151,17 @@ func (rec *Rec) grpc(b64 string) (rp string) {
 		rec.AddError(errors.Errorf("rec failed"))
 		return
 	}
-	log.WithContext(rec.ops.ctx).Info("rec success, latency: %dms", end-start)
-	rp = v.Value[0]
+	log.
+		WithContext(rec.ops.ctx).
+		WithFields(map[string]interface{}{
+			"Latency": fmt.Sprintf("%dms", end-start),
+		}).
+		Info("rec success")
+	var arr []Res
+	utils.Json2Struct(v.Value[0], &arr)
+	if len(arr) == 1 {
+		rp = arr[0]
+	}
 	return
 }
 
